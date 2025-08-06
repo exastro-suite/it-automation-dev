@@ -151,7 +151,7 @@ try {
     $groupDnToInfo = makeGroupDnToInfo($groupListFromAD);
     $userListFromAD = getUserSyncData($ldapconn, $baseDn, $groupDnToInfo);
     $excludedGroupListFromAD = getGroupNotSyncData($ldapconn, $baseDn);
-
+    
     ////////////////////////////////
     // 共通モジュールの呼び出し   //
     ////////////////////////////////
@@ -350,19 +350,18 @@ function getUserSyncData($ldapconn, $baseDn, $groupDnToInfo) {
     }
     
     do {
-        // ldap control
-        $controls = array(
-            array(
-                "oid" => LDAP_CONTROL_PAGEDRESULTS, // "1.2.840.113556.1.4.319": Paged Results Control OID
-                "value" => array(
-                    "size" => $pageSize,
-                    "cookie" => $cookie
-                )
-            )
-        );
+        // ldap_control_paged_result でページングコントロールを設定
+        if (!ldap_control_paged_result($ldapconn, $pageSize, true, $cookie)) {
+            backyardLog('Error setting paged result control: ' . ldap_error($ldapconn));
+            return $userData;
+        }
 
         // ツリーを検索
-        $searchResult = ldap_search($ldapconn, $baseDn, $filter, $attribute, 0, 0, 0, null, $controls);
+        $searchResult = ldap_search($ldapconn, $baseDn, $filter, $attribute);
+        if ($searchResult === false) {
+            backyardLog('Error performing LDAP search: ' . ldap_error($ldapconn));
+            return $userData;
+        }
         
         /* 「ldap_search」の結果から、エントリを取得する */
         $result = ldap_get_entries($ldapconn , $searchResult);
@@ -415,21 +414,18 @@ function getUserSyncData($ldapconn, $baseDn, $groupDnToInfo) {
             
         }
 
-        // 結果から情報を展開する
-        ldap_parse_result($ldapconn, $searchResult, $errcode, $matcheddn, $errmsg, $referrals, $controls);
-        
-        // クッキー取得
-        if (isset($controls[LDAP_CONTROL_PAGEDRESULTS]["value"]["cookie"])) {
-            $cookie = $controls[LDAP_CONTROL_PAGEDRESULTS]["value"]["cookie"];
-            if($log_level === "DEBUG") {
+        // ldap_control_paged_result_response からクッキー取得
+		ldap_control_paged_result_response($ldapconn, $searchResult, $cookie);
+
+        if ($log_level === "DEBUG") {
+            if (!empty($cookie)) {
                 backyardLog("next page_result");
-            }
-        } else {
-            $cookie = "";
-            if($log_level === "DEBUG") {
-                backyardLog("ldap_search->ldap_get_entries break: Cookies cannot be obtained");
+            } else {
+                backyardLog("ldap_search->ldap_get_entries break: No more cookies (last page)");
             }
         }
+        // 検索結果リソースを解放
+        ldap_free_result($searchResult);
         
     } while (!empty($cookie));
      
@@ -477,19 +473,18 @@ function getGroupSyncData($ldapconn, $baseDn) {
     $attribute = array("objectsid", "samaccountname", "dn");
 
     do {
-        // ldap control
-        $controls = array(
-            array(
-                "oid" => LDAP_CONTROL_PAGEDRESULTS, // "1.2.840.113556.1.4.319": Paged Results Control OID
-                "value" => array(
-                    "size" => $pageSize,
-                    "cookie" => $cookie
-                )
-            )
-        );
+        // ldap_control_paged_result でページングコントロールを設定
+        if (!ldap_control_paged_result($ldapconn, $pageSize, true, $cookie)) {
+            backyardLog('Error setting paged result control: ' . ldap_error($ldapconn));
+            return $groupData;
+        }
         
         // ツリーを検索
-        $searchResult = ldap_search($ldapconn, $baseDn, $filter, $attribute, 0, 0, 0, null, $controls);
+        $searchResult = ldap_search($ldapconn, $baseDn, $filter, $attribute);
+        if ($searchResult === false) {
+            backyardLog('Error performing LDAP search: ' . ldap_error($ldapconn));
+            return $groupData;
+        }
         
         /* 「ldap_search」の結果から、エントリを取得する */
         $result = ldap_get_entries($ldapconn , $searchResult);
@@ -506,22 +501,19 @@ function getGroupSyncData($ldapconn, $baseDn) {
             $groupData[] = $data;
         }
 
-        // 結果から情報を展開する
-        ldap_parse_result($ldapconn, $searchResult, $errcode, $matcheddn, $errmsg, $referrals, $controls);
+        // ldap_control_paged_result_response からクッキー取得
+		ldap_control_paged_result_response($ldapconn, $searchResult, $cookie);
 
-        // クッキー取得
-        if (isset($controls[LDAP_CONTROL_PAGEDRESULTS]["value"]["cookie"])) {
-            $cookie = $controls[LDAP_CONTROL_PAGEDRESULTS]["value"]["cookie"];
-            if($log_level === "DEBUG") {
+        if ($log_level === "DEBUG") {
+            if (!empty($cookie)) {
                 backyardLog("next page_result");
-            }
-        } else {
-            $cookie = "";
-            if($log_level === "DEBUG") {
-                backyardLog("ldap_search->ldap_get_entries break: Cookies cannot be obtained");
+            } else {
+                backyardLog("ldap_search->ldap_get_entries break: No more cookies (last page)");
             }
         }
-        
+        // 検索結果リソースを解放
+        ldap_free_result($searchResult);
+
     } while (!empty($cookie));
 
     // ldap_sort 代替
@@ -568,19 +560,18 @@ function getGroupNotSyncData($ldapconn, $baseDn) {
     $attribute = array("objectsid");
 
     do {
-        // ldap control
-        $controls = array(
-            array(
-                "oid" => LDAP_CONTROL_PAGEDRESULTS, // "1.2.840.113556.1.4.319": Paged Results Control OID
-                "value" => array(
-                    "size" => $pageSize,
-                    "cookie" => $cookie
-                )
-            )
-        );
+        // ldap_control_paged_result でページングコントロールを設定
+        if (!ldap_control_paged_result($ldapconn, $pageSize, true, $cookie)) {
+            backyardLog('Error setting paged result control: ' . ldap_error($ldapconn));
+            return $excludedGroupData;
+        }
 
         // ツリーを検索
-        $searchResult = ldap_search($ldapconn, $baseDn, $filter, $attribute, 0, 0, 0, null, $controls);
+        $searchResult = ldap_search($ldapconn, $baseDn, $filter, $attribute);
+        if ($searchResult === false) {
+            backyardLog('Error performing LDAP search: ' . ldap_error($ldapconn));
+            return $excludedGroupData;
+        }
         
         /* 「ldap_search」の結果から、エントリを取得する */
         $result = ldap_get_entries($ldapconn , $searchResult);
@@ -593,21 +584,19 @@ function getGroupNotSyncData($ldapconn, $baseDn) {
             $excludedGroupData[] = bin2strSID($result[$g]['objectsid'][0]);
         }
 
-        // 結果から情報を展開する
-        ldap_parse_result($ldapconn, $searchResult, $errcode, $matcheddn, $errmsg, $referrals, $controls);
+        // ldap_control_paged_result_response からクッキー取得
+		ldap_control_paged_result_response($ldapconn, $searchResult, $cookie);
 
-        // クッキー取得
-        if (isset($controls[LDAP_CONTROL_PAGEDRESULTS]["value"]["cookie"])) {
-            $cookie = $controls[LDAP_CONTROL_PAGEDRESULTS]["value"]["cookie"];
-            if($log_level === "DEBUG") {
+        if ($log_level === "DEBUG") {
+            if (!empty($cookie)) {
                 backyardLog("next page_result");
-            }
-        } else {
-            $cookie = "";
-            if($log_level === "DEBUG") {
-                backyardLog("ldap_search->ldap_get_entries break: Cookies cannot be obtained");
+            } else {
+                backyardLog("ldap_search->ldap_get_entries break: No more cookies (last page)");
             }
         }
+        // 検索結果リソースを解放
+        ldap_free_result($searchResult);
+        
     } while (!empty($cookie));
 
     // ldap_sort 代替
